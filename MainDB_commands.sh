@@ -35,6 +35,9 @@ aws rds create-db-instance \
     --region ap-south-1
 
 
+aws ec2 describe-security-groups --group-ids sg-06629d317c64f32cf
+aws rds describe-db-subnet-groups --db-subnet-group-name my-subnet-group
+
 
 
 
