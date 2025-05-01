@@ -2,7 +2,7 @@
 
 aws ec2 run-instances \
   --image-id ami-0696195f0b2c390e8 \
-  --count 2 \
+  --count 5 \
   --instance-type m7g.xlarge \
   --key-name 	Raviraj \
   --security-group-ids sg-079e4dc5d60c396e2 \
@@ -28,7 +28,11 @@ aws ec2 create-vpc \
     --region us-east-1
 
 ###AMI finding : 
+For arm-image: 
 aws ec2 describe-images     --owners amazon     --filters "Name=name,Values=*amazon-eks-arm64-node-1.21*" "Name=architecture,Values=arm64"     --query 'sort_by(Images, &CreationDate)[-1].ImageId'
+
+For amd-image: 
+aws ec2 describe-images     --owners amazon     --filters "Name=name,Values=*amazon-eks-amd64-node-1.21*" "Name=architecture,Values=arm64"     --query 'sort_by(Images, &CreationDate)[-1].ImageId'
 
 
 ##Key-pair: creation: 
