@@ -4,3 +4,5 @@
 
 
 ##Day2 Teaching : Instance Creation and instace moddifcation, intace automation , deletion  and backup, intace action pipline
+
+#Day3 Vpc-creation, VPC basic, VPC cli, VPC automation, Subnet creation. 
