@@ -1,6 +1,6 @@
 #!/bin/bash
-—aws ec2 create-tags \
---REGION="us-east-1\ 
+—aws ec2 create-vpc\
+--REGION= us-east-1\
 —CIDR_BLOCK ip =10.956.900.23\
     --resources VPC=vpcid \
-    --tags Key=Name,Value=$VPC_NAME
+    
