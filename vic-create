@@ -1,6 +1,6 @@
 #!/bin/bash
-—aws ec2 create-vpc\
---REGION= us-east-1\
-—CIDR_BLOCK ip =10.956.900.23\
+--aws ec2 create-vpc\
+--region= us-east-1\
+--cidr block ip =10.956.900.23\
     --resources VPC=vpcid \
     
