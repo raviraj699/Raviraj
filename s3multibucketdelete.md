@@ -63,40 +63,158 @@ This script helps you securely delete one or more AWS S3 buckets, even large one
 
 
 
+┐
+│ Run script → Not in tmux?
+│ → Spawn tmux session → Exit current shell
+└──────────────────────────────────────────▶ Inside tmux:
+    ↓
+    Prompt for bucket names (until blank line)
+    ↓
+    For each bucket:
+        Verify exists → Confirm proceed?
+            • List folders → Confirm each → Delete if approved
+            • List root objects → Confirm → Delete if approved
+            • List versioned items & delete markers → Confirm each type → Delete if approved
+            • FINAL confirmation → Delete bucket
+    ↓
+    If any error occurs → Trap catches it → tmux opens for you to inspect!
+    ↓
+    All done — “All done!” message displayed
 
 
-    ┌─────────────────┐    Launch tmux     ┌─────────────┐
-│ You run script  │ ─────────────────► │ tmux session│
-└─────────────────┘                    └─────────────┘
-                                          │
-                                          ▼
-                        ┌─────────────────────────────┐
-                        │ Ask for bucket names (list) │
-                        └─────────────────────────────┘
-                                          │
-                 ┌────────────────────────┼────────────────────────┐
-                 ▼                        ▼                        ▼
-       ┌───────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-       │ Validate bucket A │    │ … bucket B …      │    │ … bucket N …      │
-       └───────────────────┘    └──────────────────┘    └──────────────────┘
-                 │                        │                        │
-          Ask confirm             Ask confirm             Ask confirm
-    ┌────────────┴─────────┐ ┌────────────┴─────────┐ ┌────────────┴─────────┐
-    ▼                      ▼ ▼                      ▼ ▼                      ▼
- Confirm & delete       Skip                Confirm & delete       Skip
-   prefixes, root,          ...                 ...
-   versions, markers
-                 │                        │                        │
-                 └──────────┬─────────────┴─────────────┬──────────┘
-                            ▼                           ▼
-                  ┌──────────────────────────────────────────────┐
-                  │ Final ask: delete the entire bucket?         │
-                  └──────────────────────────────────────────────┘
-                            │                           │
-                    Confirm → Delete                Skip
-                            └──────────┬─────────────────────┘
-                                       ▼
-                              💬 “All done!” at end
+🧩 Code Walkthrough
+1. Strict Mode & Error Trap
+bash
+Copy
+Edit
+#!/usr/bin/env bash
+set -Eeuo pipefail
+trap 'on_error $? $LINENO' ERR
+-e: Exit on any failing command
+
+-u: Treat undefined variables as errors
+
+-o pipefail: Catch failures inside pipelines 
+reddit.com
++1
+reddit.com
++1
+stackoverflow.com
++2
+howtogeek.com
++2
+stackoverflow.com
++2
+
+-E: Make sure ERR trap works in functions/subshells 
+reddit.com
++15
+stackoverflow.com
++15
+stackoverflow.com
++15
+
+trap ERR: Calls on_error() on any command failure
+
+2. Error Handler
+bash
+Copy
+Edit
+on_error() {
+  echo "❌ ERROR at line $2: exit code $1"
+  tmux attach -t "$SESSION" || true
+  exit "$1"
+}
+Automatically opens tmux so you can inspect what went wrong.
+
+3. Tools Validation
+bash
+Copy
+Edit
+env_check() {
+  for cmd in aws jq tmux; do
+    command -v "$cmd" >/dev/null || {
+      echo "❌ '$cmd' is missing. Please install it."
+      exit 1
+    }
+  done
+}
+Ensures aws, jq, and tmux are available before doing anything.
+
+4. main() — Entry Point & TMUX Launcher
+bash
+Copy
+Edit
+if [ -z "${TMUX:-}" ]; then
+  tmux new-session -d -s "$SESSION" bash "$0" "$@"
+  echo "📺 Connect later with: tmux attach -t $SESSION"
+  exit
+fi
+If not already inside tmux, it restarts the script inside a new session and exits current shell.
+
+5. Reading Buckets
+bash
+Copy
+Edit
+echo "🔹 Enter bucket names (one per line), blank to finish:"
+while read -rp "> " name && [[ -n "$name" ]]; do
+  buckets+=("$name")
+done
+Supports input of multiple bucket names interactively.
+
+6. Secure Deletion per Bucket
+bash
+Copy
+Edit
+aws s3api head-bucket --bucket "$bucket"
+confirm "Proceed deleting '$bucket'?" || return
+Checks bucket existence and requests user confirmation before continuing.
+
+7. Deleting Folders (Prefixes)
+bash
+Copy
+Edit
+mapfile -t prefixes < <(
+  aws s3api list-objects-v2 --bucket "$bucket" --delimiter "/" \
+    --query 'CommonPrefixes[].Prefix' --output text
+)
+for p in "${prefixes[@]}"; do
+  confirm "Delete folder '$p'?" && aws s3 rm "s3://$bucket/$p" --recursive
+done
+Gets top-level folders and prompts deletion for each individually.
+
+8. Deleting Root-level Objects
+bash
+Copy
+Edit
+root_objs=$(aws s3api list-objects-v2 --bucket "$bucket" ...)
+if [[ -n "$root_objs" ]]; then
+  echo "Preview:"; printf '%s\n' "$root_objs" | head -n5
+  confirm "Delete all root objects?" && aws s3 rm "s3://$bucket/" --recursive
+fi
+Shows a preview and asks for permission before deleting all root-level files.
+
+9. Handling Versioned & Delete-Marker Objects
+bash
+Copy
+Edit
+for typ in Versions DeleteMarkers; do
+  items=$(aws s3api list-object-versions --bucket "$bucket" --query "${typ}[] | []")
+  count=$(jq length <<<"$items")
+  if (( count )); then
+    echo "Found $count $typ"
+    confirm "Delete all $typ?" && aws s3api delete-objects ...
+  fi
+done
+Retrieves and prompts deletion of all versioned/deleted objects — if versioning is enabled.
+
+10. Final Bucket Deletion
+bash
+Copy
+Edit
+confirm "🔥 FINAL: Delete bucket '$bucket' permanently?" \
+  && aws s3api delete-bucket --bucket "$bucket"
+Requires final approval before deleting the bucket itself.
 
 
 Everything runs inside tmux, so even if your browser disconnects, the cleanup continues.
