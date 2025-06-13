@@ -1,110 +1,92 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Confirm prompt
 confirm() {
   while true; do
-    read -p "$1 (y/n): " yn
-    case $yn in
-      [Yy]* ) return 0 ;;
-      [Nn]* ) return 1 ;;
-      * ) echo "Please answer y or n." ;;
-    esac
+    read -rp "$1 (y/n): " yn
+    case $yn in [Yy]*) return 0 ;; [Nn]*) return 1 ;; *) echo "Please answer y or n." ;; esac
   done
 }
 
+# Check AWS CLI and config
 aws_check() {
-  if ! command -v aws &>/dev/null; then
-    echo "❌ AWS CLI not found. Install it first." >&2
-    exit 1
-  fi
-  aws configure list >/dev/null 2>&1 || { echo "❌ AWS CLI appears unconfigured."; exit 1; }
+  command -v aws >/dev/null || { echo "❌ Install AWS CLI"; exit 1; }
+  aws configure list >/dev/null 2>&1 || { echo "❌ Configure AWS CLI"; exit 1; }
 }
 
 delete_s3_bucket_secure() {
   local bucket="$1"
-
   aws_check
+  aws s3api head-bucket --bucket "$bucket" >/dev/null || { echo "❌ Bucket '$bucket' not found."; exit 1; }
+  echo "🔐 Safely deleting S3 bucket: $bucket"
 
-  aws s3api head-bucket --bucket "$bucket" >/dev/null 2>&1 || {
-    echo "❌ Bucket not found or inaccessible."
-    return 1
-  }
-
-  echo "🗑️ Preparing to delete bucket \"$bucket\" safely…"
-
-  # Step 1: List all top-level prefixes ("folders")
-  mapfile -t prefixes < <(
+  # List prefixes
+  IFS=$'\n' read -r -d '' -a prefixes < <(
     aws s3api list-objects-v2 --bucket "$bucket" --delimiter "/" \
-      --query 'CommonPrefixes[].Prefix' --output text
+      --query 'CommonPrefixes[].Prefix' --output text && printf '\0'
   )
-
-  if [ ${#prefixes[@]} -gt 0 ]; then
-    echo "Found ${#prefixes[@]} top-level folders:"
+  if ((${#prefixes[@]})); then
+    echo "Found ${#prefixes[@]} folders:"
     for p in "${prefixes[@]}"; do
       echo " • $p"
-    done
-
-    for p in "${prefixes[@]}"; do
-      if confirm "Delete all contents under prefix '$p'?"; then
+      if confirm "Delete contents under '$p'?"; then
         aws s3 rm "s3://$bucket/$p" --recursive
-        echo "→ Deleted contents under '$p'"
+        echo "✔️ Deleted '$p'"
       else
-        echo "→ Skipped prefix '$p'"
+        echo "✖️ Skipped '$p'"
       fi
     done
   else
-    echo "No folder prefixes found."
+    echo "No folders found."
   fi
 
-  # Step 2: Prompt deletion of any remaining root-level objects
-  root_objs=$(aws s3api list-objects-v2 --bucket "$bucket" --query 'Contents[].Key' --output text)
-  if [ -n "${root_objs:-}" ]; then
-    echo -e "\nFound $(wc -w <<<"$root_objs") objects at root level:"
-    echo "$root_objs" | head -n 5 | nl -w2 -s". "
-    [ "$(wc -w <<<"$root_objs")" -gt 5 ] && echo " ...and more"
-
+  # Root-level objects
+  read -r -d '' rootobjs < <(
+    aws s3api list-objects-v2 --bucket "$bucket" --query 'Contents[].Key' --output text && printf '\0'
+  )
+  if [[ -n "${rootobjs:-}" ]]; then
+    echo -e "\nFound root-level objects:"
+    printf "%s\n" "${rootobjs}" | head -n5
     if confirm "Delete all root-level objects?"; then
-      aws s3 rm "s3://$bucket/" --recursive --exclude "*" --include "*"
-      echo "→ Deleted all root-level objects."
+      aws s3 rm "s3://$bucket/" --recursive
+      echo "✔️ Root objects deleted."
     else
-      echo "→ Root-level objects preserved."
+      echo "✖️ Left root objects."
     fi
   fi
 
-  # Step 3: Versioned items (versions & delete markers)
-  echo -e "\nChecking for versioned/deleted items..."
-  for type in "Versions" "DeleteMarkers"; do
-    items_json=$(aws s3api list-object-versions --bucket "$bucket" --query "${type}[] | []")
-    count=$(jq length <<<"${items_json}")
+  # Versions & delete markers
+  for typ in Versions DeleteMarkers; do
+    items=$(aws s3api list-object-versions --bucket "$bucket" --query "${typ}[] | []")
+    count=$(jq length <<<"$items")
     if (( count > 0 )); then
-      echo "Found $count $type."
-      echo "${items_json}" | jq -r '.[0:5] | .[] | .Key' | nl -w2 -s". "
-      [ "$count" -gt 5 ] && echo " ...and more"
-
-      if confirm "Delete all $type?"; then
-        aws s3api delete-objects --bucket "$bucket" \
-          --delete "{\"Objects\":${items_json},\"Quiet\":false}"
-        echo "→ Deleted all $type."
+      echo -e "\nFound $count $typ."
+      jq -r '.[0:5][] | .Key' <<<"$items"
+      if confirm "Delete all $typ?"; then
+        aws s3api delete-objects --bucket "$bucket" --delete "{\"Objects\":${items},\"Quiet\":false}"
+        echo "✔️ Deleted $typ."
       else
-        echo "→ Skipped deleting $type."
+        echo "✖️ Kept $typ."
       fi
     fi
   done
 
-  # Final confirmation to delete bucket itself
   echo
-  if confirm "ARE YOU ABSOLUTELY SURE you want to 🔥 DELETE BUCKET '$bucket' permanently?"; then
+  if confirm "FINAL: Delete bucket '$bucket'? This CANNOT be undone."; then
     aws s3api delete-bucket --bucket "$bucket"
-    echo "✅ Bucket '$bucket' deleted."
+    echo "✅ Bucket deleted."
   else
-    echo "✅ Safe exit—bucket remains intact."
+    echo "🛡️ Operation aborted. Bucket preserved."
   fi
 }
 
-# Main execution
-bucket="${1:-}"
-if [ -z "$bucket" ]; then
-  read -p "Enter the S3 bucket name to delete: " bucket
+# Entry point
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  if [[ $# -ge 1 ]]; then
+    bucket="$1"
+  else
+    read -rp "Enter S3 bucket name to delete: " bucket
+  fi
+  delete_s3_bucket_secure "$bucket"
 fi
-
-delete_s3_bucket_secure "$bucket"
