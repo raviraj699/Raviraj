@@ -3,6 +3,7 @@ set -Eeuo pipefail
 trap 'on_error $? $LINENO' ERR
 
 SESSION="s3deleter_tmux"
+LOGFILE="$HOME/${SESSION}_$(date +%Y%m%d_%H%M%S).log"
 
 on_error() {
   echo >&2
@@ -14,7 +15,7 @@ on_error() {
 
 confirm() {
   while true; do
-    read -rp "$1 (y/n): " yn
+    read -rp "$1 (y/n): " -t 120 yn || { echo -e "\n⏳ Timeout. Skipping."; return 1; }
     case $yn in [Yy]*) return 0 ;; [Nn]*) return 1 ;; *) echo "Please answer y or n." ;; esac
   done
 }
@@ -73,9 +74,15 @@ main() {
   env_check
 
   if [ -z "${TMUX:-}" ]; then
+    if tmux has-session -t "$SESSION" 2>/dev/null; then
+      echo "⚠️ tmux session '$SESSION' already exists."
+      echo "➡️ Attaching to it..."
+      tmux attach -t "$SESSION"
+      exit 0
+    fi
     echo "🔵 Launching tmux session '$SESSION'..."
-    tmux new-session -d -s "$SESSION" bash "$0" "$@"
-    echo "Use: tmux attach -t $SESSION"
+    tmux new-session -d -s "$SESSION" "bash $0 $* | tee -a '$LOGFILE'"
+    echo "✅ Script is now running in tmux. Use: tmux attach -t $SESSION"
     exit 0
   fi
 
@@ -85,7 +92,7 @@ main() {
     buckets+=("$name")
   done
 
-  [[ ${#buckets[@]} -gt 0 ]] || { echo "No buckets provided. Exiting."; exit 1; }
+  [[ ${#buckets[@]} -gt 0 ]] || { echo "❌ No buckets provided. Exiting."; exit 1; }
 
   for b in "${buckets[@]}"; do
     delete_bucket_safe "$b"
