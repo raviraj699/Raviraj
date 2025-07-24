@@ -1,0 +1,92 @@
+#### Add yes/no for rds, es, efs, eks deployment values as needed" #####
+#### Adding no to relevant deployments (for above) will do single resource deployment for intended resource only ####
+#### Ensure comments do not have matching input parameters instead use: network-reponame, use-terraformstate, es-deployment, etc. in comments ####
+#### network-reponame would be existing network repo created. ex. nonprod-network, dev-network, prod-network ####
+AWSAccount="7743353870468"
+Region="eu-central-1"
+# Change it to network repo path should resolve directory issue#
+NetworkRepositoryName="network-partner-support"
+EnvironmentSubgroupName="partner"
+CustomerTier="small"
+###Update mysqlgravitonenabled to "true", if RDS instance should be on Graviton instance family.
+###Please choose either "true" or "false" for the below, choosing other values might result in pipeline failing
+###Please note RDS Graviton 3 (m7g instance type) is available across most the regions except: af-south-1(Capetown), ap-east-1(Hong Kong), eu-south-1(Milan), ap-northeast-3(Osaka), eu-west-3(Paris). If prod infra is being deployed in these regions please reach out to Platform engineering team####
+DeployRDS="yes"
+mysqlgravitonenabled="true"
+DeployEFS="yes"
+DeployEKS="yes"
+DeploySC2="yes"
+DeployIPSec="no"
+EnableCPAM="yes"
+CustomerName="ventum"
+Environment="partner"
+JiraTicket="ctes-7879"
+Owner="raviraj"
+Backupdr="prod"
+SalesId="NA"
+key_pair_name="raviraj-partner-keypair"
+#"cpes593_test_key"
+CreationMonth="jun-2025"
+helm_release="Release-25.Amsterdam.0-GA-HF15"
+kms_key_id="default"
+EKSClusterName="-partner-eks"
+#values for tenantpurpose standard, productupgrade, hotfix, security, performanceissue, dr, sales-<product>, misc
+tenantpurpose="standard"
+##### common network parameters ####
+##### Add only if values does not need to be pulled from nondev-network ####
+VPCID=""
+AppSubnet1Id="subnet-080a0c4c346424f57"
+AppSubnet2Id="	subnet-0cb15457e53ed8864"
+AppSubnet3Id=""
+#DataSubnet1Id=""
+#DataSubnet2Id=""
+WebSubnet1Id="subnet-058943bed620cf190"
+WebSubnet2Id="subnet-05a8d0d6a6f0c6001"
+AppSubnet1CIDR=""
+AppSubnet2CIDR=""
+#AppSubnet3CIDR=""
+##### rds-deployment variables ####
+##### uncomment and update rds variables if rds deployment is true  ####
+#### BackupRetentionPeriod should be 7 for non-prod and 15 for prod ####
+RDSCreationMonth="jun-2025"
+BackupRetentionPeriod="7"
+#RDSInstanceClass="db.r5.large"
+RDSInstanceName="client-name-partner-rds"
+MultiAZ="false"
+RDSRootUserName="ravirajadmin"
+RDSSchemaName="ravirajaws"
+EnableProvisionedIOPs="false"
+ProvisionedIOPs="1000"
+OpenVPNJumpboxIP="192.168.247.14/32"
+AllocatedStorage="100"
+SnapshotIdentifier=""
+##### EFS-Deployment Variables ####
+##### Values will be taken from common network parameters above ####
+#### EKS-deployment variables #####
+#Choose the Instance types as per below:
+### If customer_tier is small or medium AND IGA : m7g.2xlarge
+### If customer_tier is large or vlarge or slarge AND IGA : m7g.4xlarge
+### For all customer_tiers with CPAM : m5a.4xlarge
+InstanceType="m5a.4xlarge"
+NodeCount="2"
+#### CPAM-deployment variables #####
+##### update CPAM variables if CPAM deployment is true  ####
+Instance_Profile="7743-Appinstance-Role"
+Worker_Node_Role="ventum-partner-eks-workernode-role"
+#### SC2-deployment variables ####
+#### update SC2 variables if SC2 deployment is true ####
+#### additional_sc2_count, Primary_Instance_Id, SC2_Security_Group_Id should be used for converting non-HA to HA####
+#### Enable_HA should be no for non-HA ####
+sc2_total_instance_count="1"
+sc2_instance_type="m7g.large"
+sc2_instance_role="7743-Appinstance-Role"
+sc2_enable_ha="no"
+sc2_additional_instance_count=""
+sc2_primary_instance_id=""
+#### IPSec Deployment Variables ####
+#### update IPSec variables if IPSec deployment is true ####
+customer_gateway_ip="54.212.10.6"
+## Below env vars needs to be static and should not be changed. ##
+UseTerraformState=""
+TerraformState=""
+AllowResourceDestroy="no"
